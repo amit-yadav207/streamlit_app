@@ -1,0 +1,37 @@
+# Ignore the virtual environment directory
+venv/
+
+# Ignore environment variable files
+.env
+
+# Ignore Python compiled files
+__pycache__/
+*.pyc
+
+# Ignore logs, local databases, and other temporary files
+*.log
+*.sqlite3
+
+# Ignore OS-generated files
+.DS_Store
+Thumbs.db
+
+# Ignore Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Ignore IDE-specific directories
+.vscode/
+.idea/
+
+# Ignore Streamlit cache (optional)
+.streamlit/
+
+# Ignore coverage reports
+htmlcov/
+.coverage
+.coverage.*
+
+# Ignore the below files only if you want to exclude them from version control:
+# .gitignore (this file itself should typically not be ignored)
+# app.py (if you want to track this file, do not add it to .gitignore)
+# requirements.txt (this file is essential for dependency management)
