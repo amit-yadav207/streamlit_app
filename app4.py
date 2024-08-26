@@ -1,5 +1,5 @@
 import os
-import torch  # Import PyTorch
+import torch  # Add this import
 import streamlit as st
 from dotenv import load_dotenv
 from PyPDF2 import PdfReader
@@ -12,7 +12,7 @@ from htmlTemplates import bot_template, user_template
 from langchain.llms import HuggingFaceHub
 
 VECTOR_STORE_PATH = "vector_store.faiss"
-encode_kwargs = {'normalize_embeddings': True}
+
 def extract_text_from_pdfs(pdf_docs):
     """Extracts text from a list of PDF documents."""
     text = ""
@@ -34,15 +34,11 @@ def split_text_into_chunks(text):
 
 def create_vector_store(text_chunks):
     """Creates a vector store from text chunks using embeddings."""
+    # Check if a GPU is available and set the device accordingly
     device = "cuda" if torch.cuda.is_available() else "cpu"
     
     # Initialize embeddings with the selected device
-    embeddings = HuggingFaceInstructEmbeddings(
-            model_name="hkunlp/instructor-large",
-            model_kwargs={'device': device},
-            encode_kwargs=encode_kwargs,
-            show_progress=True  # Enable progress bar
-        )
+    embeddings = HuggingFaceInstructEmbeddings(model_name="hkunlp/instructor-large", device=device)
     vector_store = FAISS.from_texts(texts=text_chunks, embedding=embeddings)
     vector_store.save_local(VECTOR_STORE_PATH)  # Save the vector store locally
     return vector_store
@@ -50,16 +46,10 @@ def create_vector_store(text_chunks):
 def load_vector_store():
     """Loads a vector store from a local file if it exists."""
     if os.path.exists(VECTOR_STORE_PATH):
+        # Check if a GPU is available and set the device accordingly
         device = "cuda" if torch.cuda.is_available() else "cpu"
-    
-        # Initialize embeddings with the selected device
-        embeddings = HuggingFaceInstructEmbeddings(
-            model_name="hkunlp/instructor-large",
-            model_kwargs={'device': device},
-            encode_kwargs=encode_kwargs,
-            show_progress=True  # Enable progress bar
-        )
-        return FAISS.load_local(VECTOR_STORE_PATH,embeddings=embeddings)
+        embeddings = HuggingFaceInstructEmbeddings(model_name="hkunlp/instructor-large", device=device)
+        return FAISS.load_local(VECTOR_STORE_PATH, embeddings=embeddings)
     return None
 
 def initialize_conversation_chain(vector_store, model_repo_id):
@@ -145,7 +135,6 @@ def main():
                 else:
                     st.warning("Please upload at least one PDF document.")
             else:
-                
                 st.session_state.conversation = initialize_conversation_chain(vector_store, model_repo_id)
                 st.success("Vector store loaded successfully!")
 

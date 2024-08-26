@@ -1,8 +1,8 @@
 import os
-import torch  # Import PyTorch
 import streamlit as st
 from dotenv import load_dotenv
 from PyPDF2 import PdfReader
+from docx import Document
 from langchain.text_splitter import CharacterTextSplitter
 from langchain.embeddings import HuggingFaceInstructEmbeddings
 from langchain.vectorstores import FAISS
@@ -11,15 +11,29 @@ from langchain.chains import ConversationalRetrievalChain
 from htmlTemplates import bot_template, user_template
 from langchain.llms import HuggingFaceHub
 
-VECTOR_STORE_PATH = "vector_store.faiss"
-encode_kwargs = {'normalize_embeddings': True}
-def extract_text_from_pdfs(pdf_docs):
-    """Extracts text from a list of PDF documents."""
+VECTOR_STORE_PATHS = {
+    "IPC": "vector_store_ipc.faiss",
+    "Health": "vector_store_health.faiss",
+    "Medicine": "vector_store_medicine.faiss",
+    "Study": "vector_store_study.faiss"
+}
+
+def extract_text_from_docs(files):
+    """Extracts text from a list of documents of various types."""
     text = ""
-    for pdf in pdf_docs:
-        pdf_reader = PdfReader(pdf)
-        for page in pdf_reader.pages:
-            text += page.extract_text()
+    for file in files:
+        if file.type == "application/pdf":
+            pdf_reader = PdfReader(file)
+            for page in pdf_reader.pages:
+                text += page.extract_text()
+        elif file.type == "text/plain":
+            text += file.read().decode("utf-8")
+        elif file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+            doc = Document(file)
+            for paragraph in doc.paragraphs:
+                text += paragraph.text + "\n"
+        else:
+            st.warning(f"Unsupported file type: {file.type}")
     return text
 
 def split_text_into_chunks(text):
@@ -32,34 +46,18 @@ def split_text_into_chunks(text):
     )
     return text_splitter.split_text(text)
 
-def create_vector_store(text_chunks):
+def create_vector_store(text_chunks, vector_store_path):
     """Creates a vector store from text chunks using embeddings."""
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    
-    # Initialize embeddings with the selected device
-    embeddings = HuggingFaceInstructEmbeddings(
-            model_name="hkunlp/instructor-large",
-            model_kwargs={'device': device},
-            encode_kwargs=encode_kwargs,
-            show_progress=True  # Enable progress bar
-        )
+    embeddings = HuggingFaceInstructEmbeddings(model_name="hkunlp/instructor-xl")
     vector_store = FAISS.from_texts(texts=text_chunks, embedding=embeddings)
-    vector_store.save_local(VECTOR_STORE_PATH)  # Save the vector store locally
+    vector_store.save_local(vector_store_path)  # Save the vector store locally
     return vector_store
 
-def load_vector_store():
+def load_vector_store(vector_store_path):
     """Loads a vector store from a local file if it exists."""
-    if os.path.exists(VECTOR_STORE_PATH):
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-    
-        # Initialize embeddings with the selected device
-        embeddings = HuggingFaceInstructEmbeddings(
-            model_name="hkunlp/instructor-large",
-            model_kwargs={'device': device},
-            encode_kwargs=encode_kwargs,
-            show_progress=True  # Enable progress bar
-        )
-        return FAISS.load_local(VECTOR_STORE_PATH,embeddings=embeddings)
+    if os.path.exists(vector_store_path):
+        embeddings = HuggingFaceInstructEmbeddings(model_name="hkunlp/instructor-xl")
+        return FAISS.load_local(vector_store_path, embeddings=embeddings)
     return None
 
 def initialize_conversation_chain(vector_store, model_repo_id):
@@ -103,14 +101,14 @@ def clear_chat():
 def main():
     """Main function to run the Streamlit app."""
     load_dotenv()
-    st.set_page_config(page_title="Chat with Multiple PDFs", page_icon=":books:")
+    st.set_page_config(page_title="Chat with Multiple Documents", page_icon=":books:")
     
     if "conversation" not in st.session_state:
         st.session_state.conversation = None
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = None
 
-    st.header("Chat with Multiple PDFs :books:")
+    st.header("Chat with Multiple Documents :books:")
 
     # Button to clear the chat
     if st.button("Clear Chat"):
@@ -128,26 +126,32 @@ def main():
             ["mistralai/Mixtral-8x7B-Instruct-v0.1", "google/flan-t5-xxl", "mistralai/Mistral-7B-Instruct-v0.2"]  # Add more models as needed
         )
         
+        st.subheader("Vector Store Selection")
+        selected_store = st.selectbox(
+            "Select a vector store:",
+            list(VECTOR_STORE_PATHS.keys())
+        )
+        vector_store_path = VECTOR_STORE_PATHS[selected_store]
+        
         st.subheader("Your Documents")
-        pdf_docs = st.file_uploader(
-            "Upload your PDFs here and click on 'Process'", accept_multiple_files=True
+        docs = st.file_uploader(
+            "Upload your documents here and click on 'Process'", accept_multiple_files=True
         )
         if st.button("Process"):
-            vector_store = load_vector_store()
+            vector_store = load_vector_store(vector_store_path)
             if not vector_store:
-                if pdf_docs:
+                if docs:
                     with st.spinner("Processing..."):
-                        raw_text = extract_text_from_pdfs(pdf_docs)
+                        raw_text = extract_text_from_docs(docs)
                         text_chunks = split_text_into_chunks(raw_text)
-                        vector_store = create_vector_store(text_chunks)
+                        vector_store = create_vector_store(text_chunks, vector_store_path)
                         st.session_state.conversation = initialize_conversation_chain(vector_store, model_repo_id)
-                        st.success("Embeddings created successfully and vector store is ready!")
+                        st.success(f"Embeddings created successfully and vector store '{selected_store}' is ready!")
                 else:
-                    st.warning("Please upload at least one PDF document.")
+                    st.warning("Please upload at least one document.")
             else:
-                
                 st.session_state.conversation = initialize_conversation_chain(vector_store, model_repo_id)
-                st.success("Vector store loaded successfully!")
+                st.success(f"Vector store '{selected_store}' loaded successfully!")
 
 if __name__ == '__main__':
     main()
